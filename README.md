@@ -8,6 +8,11 @@ more recipients using your SMTP server.  The tool can be used in any
 CI system (Jenkins, GitHub Actions, GitLab CI and others) and is
 packaged for convenient installation via `pip`.
 
+
+### Screenshot
+<img width="319" height="301" alt="image" src="https://github.com/user-attachments/assets/f722ce72-f2ef-4f49-9193-6982240cc2dc" />
+
+
 ## Features
 
 * 📦 **Easy installation** – distributed on PyPI so you can install it
