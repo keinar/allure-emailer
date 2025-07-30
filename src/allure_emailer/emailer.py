@@ -45,12 +45,17 @@ def parse_summary(path: Path | str) -> Dict[str, int]:
     }
 
 
-def build_html_email(stats: Dict[str, int], report_url: str) -> str:
+def build_html_email(
+    stats: Dict[str, int],
+    report_url: str,
+    custom_fields: Optional[Dict[str, str]] = None,
+) -> str:
     """Construct an HTML email body summarising test results.
 
     The returned HTML includes a heading, a simple borderless table of
-    counts and a hyperlink to the full Allure report.  It can be used
-    as the content of a ``text/html`` MIME part.
+    counts, an optional section for custom key–value fields and a
+    hyperlink to the full Allure report.  It can be used as the
+    content of a ``text/html`` MIME part.
 
     Parameters
     ----------
@@ -60,6 +65,11 @@ def build_html_email(stats: Dict[str, int], report_url: str) -> str:
     report_url: str
         URL to the full Allure report.  If empty, the line with the
         hyperlink is omitted.
+    custom_fields: dict, optional
+        Additional key–value pairs to display below the summary table.
+        The keys should be strings and the values will be converted
+        to strings.  If ``None`` or empty no custom section is
+        included.
 
     Returns
     -------
@@ -78,6 +88,14 @@ def build_html_email(stats: Dict[str, int], report_url: str) -> str:
         if report_url
         else ""
     )
+    custom_html = ""
+    if custom_fields:
+        # Build a small table or list for custom fields
+        rows = "".join(
+            f"<tr><td><strong>{key}</strong></td><td>{value}</td></tr>"
+            for key, value in custom_fields.items()
+        )
+        custom_html = f"<h3>Additional Information</h3><table border='0' cellpadding='6' cellspacing='0'>{rows}</table>"
     html = f"""
 <html>
   <body style="font-family: Arial, sans-serif;">
@@ -85,6 +103,7 @@ def build_html_email(stats: Dict[str, int], report_url: str) -> str:
     <table border="0" cellpadding="6" cellspacing="0">
       {table_rows}
     </table>
+    {custom_html}
     {link_html}
   </body>
 </html>
@@ -97,10 +116,12 @@ def send_email(config: Config, html: str, subject: str = "Allure Test Summary") 
 
     This function creates a ``MIMEMultipart`` message with only an
     HTML part (no plain text) and sends it via the SMTP server defined
-    in the provided configuration.  It always connects using
-    STARTTLS.  If your SMTP server does not support STARTTLS or
-    requires a different authentication mechanism you may need to
-    adjust this function accordingly.
+    in the provided configuration.  When connecting on port ``465`` it
+    uses :class:`smtplib.SMTP_SSL` (implicit TLS) and otherwise
+    performs an explicit TLS upgrade using ``starttls()`` (commonly
+    used with port ``587``).  The sender (``From``) address defaults
+    to the SMTP ``user`` unless a specific sender was provided via
+    configuration or command‑line override.
 
     Parameters
     ----------
@@ -115,12 +136,22 @@ def send_email(config: Config, html: str, subject: str = "Allure Test Summary") 
     # Create message container
     message = MIMEMultipart("alternative")
     message["Subject"] = subject
-    message["From"] = config.sender
+    message["From"] = config.effective_sender()
     message["To"] = ", ".join(config.recipients)
-    # Attach HTML part
     message.attach(MIMEText(html, "html"))
-    # Connect and send
-    with smtplib.SMTP(config.host, config.port) as server:
-        server.starttls()
-        server.login(config.user, config.password)
-        server.sendmail(config.sender, config.recipients, message.as_string())
+    # Connect using SSL or STARTTLS depending on port
+    if config.port == 465:
+        # Implicit TLS (SSL) connection
+        with smtplib.SMTP_SSL(config.host, config.port) as server:
+            server.login(config.user, config.password)
+            server.sendmail(
+                config.effective_sender(), config.recipients, message.as_string()
+            )
+    else:
+        # Explicit TLS via STARTTLS (default for port 587)
+        with smtplib.SMTP(config.host, config.port) as server:
+            server.starttls()
+            server.login(config.user, config.password)
+            server.sendmail(
+                config.effective_sender(), config.recipients, message.as_string()
+            )

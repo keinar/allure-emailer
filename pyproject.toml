@@ -31,12 +31,19 @@ dependencies = [
   "python-dotenv>=1.0.0"
 ]
 
-[[project.keywords]]
-keyword = "allure"
-[[project.keywords]]
-keyword = "email"
-[[project.keywords]]
-keyword = "ci"
+keywords = ["allure", "email", "ci"]
 
 [project.scripts]
 allure-emailer = "allure_emailer.cli:app"
+
+# Configure setuptools to find packages under the `src` directory.
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0"
+]

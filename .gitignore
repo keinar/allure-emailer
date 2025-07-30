@@ -1,0 +1,10 @@
+.idea
+.venv
+.DS_Store
+dist
+*.pyc
+src/allure_emailer.egg-info/
+__pycache__/
+tests/__pycache__/
+src/allure_emailer/__pycache__/
+src/allure_emailer/__pycache__/*.pyc

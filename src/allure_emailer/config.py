@@ -21,20 +21,27 @@ class Config:
     """Runtime configuration for allure-emailer.
 
     Attributes correspond to environment variables defined in the
-    generated ``.env`` file.  All values except ``recipients`` and
+    generated configuration file.  All values except ``recipients`` and
     ``port`` are strings.  The ``recipients`` attribute contains a
     list of email addresses split on commas.  The ``port`` attribute
     is converted to an integer.
+
+    The ``sender`` field is optional.  If left empty or undefined, the
+    SMTP ``user`` will be used as the effective sender address.  This
+    behaviour simplifies configuration by inferring the "From" address
+    from the authentication username, which is typical for many SMTP
+    providers.  Call :py:meth:`effective_sender` to obtain the final
+    address used when sending email.
     """
 
     host: str
     port: int
     user: str
     password: str
-    sender: str
     recipients: List[str] = field(default_factory=list)
     json_path: str = "allure-report/widgets/summary.json"
     report_url: str = ""
+    sender: str = ""
 
     @classmethod
     def from_env(
@@ -66,15 +73,24 @@ class Config:
         Config
             An instantiated configuration object.
         """
-        # Load from file into environment without overriding existing
-        # environment variables.  This ensures explicit environment
-        # variables (e.g. secrets injected by CI) take precedence over
-        # values in the file.
+        # Load configuration from the .env file (if provided) and from
+        # the process environment.  The values in the file take
+        # precedence over the environment variables of the same name to
+        # avoid collisions with system variables like ``USER``.
+        file_vars: Dict[str, Optional[str]] = {}
         if env_file is not None:
-            load_dotenv(env_file, override=False)
+            # dotenv_values reads key/value pairs from the file without
+            # altering os.environ
+            file_vars = dotenv_values(env_file)  # type: ignore[assignment]
 
-        env_map: Dict[str, Optional[str]] = {}
-        for field_name in [
+        # Start with a copy of the current environment; values from the
+        # file override these.
+        env_map: Dict[str, Optional[str]] = {k.lower(): v for k, v in os.environ.items()}
+        for k, v in file_vars.items():
+            env_map[k.lower()] = v
+
+        # Extract only the keys we care about
+        keys = [
             "host",
             "port",
             "user",
@@ -83,40 +99,63 @@ class Config:
             "recipients",
             "json_path",
             "report_url",
-        ]:
-            env_key = field_name.upper()
-            env_map[field_name] = os.getenv(env_key)
+        ]
+        env_map = {k: env_map.get(k) for k in keys}
 
-        # Apply overrides (command-line flags) if provided
+        # Apply CLI overrides if provided (these take highest precedence)
         if overrides:
             for key, value in overrides.items():
                 if value is not None:
                     env_map[key] = value
 
-        # Validate required fields
-        missing = [k for k in ["host", "port", "user", "password", "sender", "recipients"] if not env_map.get(k)]
+        # Validate required fields.  ``sender`` is optional and will
+        # default to the SMTP user if not provided.
+        required_keys = ["host", "port", "user", "password", "recipients"]
+        missing = [k for k in required_keys if not env_map.get(k)]
         if missing:
-            raise ValueError(f"Missing required configuration: {', '.join(missing).upper()}")
+            raise ValueError(
+                f"Missing required configuration: {', '.join(missing).upper()}"
+            )
 
         # Convert and normalise values
         port_value = env_map["port"]
-        port_int: int
         try:
             port_int = int(port_value) if port_value is not None else 0
         except ValueError:
             raise ValueError(f"Invalid port value: {port_value}")
 
         recipients_list = [addr.strip() for addr in env_map["recipients"].split(",") if addr.strip()]
+        # Ensure the SMTP username is a full email address (contains '@')
+        user_val = env_map["user"]
+        if "@" not in (user_val or ""):
+            raise ValueError(
+                "SMTP USER must be a full email address (e.g. contact@example.com)"
+            )
+
         return cls(
             host=env_map["host"],
             port=port_int,
-            user=env_map["user"],
+            user=user_val,
             password=env_map["password"],
-            sender=env_map["sender"],
             recipients=recipients_list,
             json_path=env_map.get("json_path") or "allure-report/widgets/summary.json",
             report_url=env_map.get("report_url") or "",
+            sender=env_map.get("sender") or "",
         )
+
+    def effective_sender(self) -> str:
+        """Return the email address used as the From header.
+
+        If a ``sender`` was provided via configuration or overrides it
+        takes precedence.  Otherwise, the SMTP ``user`` value is used.
+
+        Returns
+        -------
+        str
+            The address to use as the ``From`` header when sending
+            email.
+        """
+        return self.sender or self.user
 
 
 def save_env_file(path: Path, config_dict: Dict[str, str]) -> None:

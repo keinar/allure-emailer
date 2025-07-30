@@ -46,7 +46,7 @@ def test_config_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
         "\n".join([
             "HOST=smtp.test.com",
             "PORT=2525",
-            "USER=ci",
+            "USER=ci@example.com",
             "PASSWORD=secret",
             "SENDER=ci@test.com",
             "RECIPIENTS=dev1@test.com,dev2@test.com",
@@ -60,7 +60,7 @@ def test_config_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     cfg = Config.from_env(env_file)
     assert cfg.host == "smtp.test.com"
     assert cfg.port == 2525
-    assert cfg.user == "ci"
+    assert cfg.user == "ci@example.com"
     assert cfg.password == "secret"
     assert cfg.sender == "ci@test.com"
     assert cfg.recipients == ["dev1@test.com", "dev2@test.com"]
@@ -72,3 +72,23 @@ def test_config_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert cfg2.host == "smtp.override"
     assert cfg2.port == 587
     assert cfg2.recipients == ["user@acme.com"]
+
+
+def test_effective_sender_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When no SENDER is provided the effective sender should fall back to the USER."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join([
+            "HOST=smtp.test.com",
+            "PORT=2525",
+            "USER=ci@example.com",
+            "PASSWORD=secret",
+            "RECIPIENTS=dev@example.com",
+        ])
+    )
+    for var in ["HOST", "PORT", "USER", "PASSWORD", "RECIPIENTS", "SENDER", "JSON_PATH", "REPORT_URL"]:
+        monkeypatch.delenv(var, raising=False)
+    cfg = Config.from_env(env_file)
+    assert cfg.sender == ""
+    # effective_sender should use the USER when sender is missing
+    assert cfg.effective_sender() == "ci@example.com"
