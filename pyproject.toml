@@ -1,0 +1,42 @@
+## pyproject.toml
+#
+# This file defines the packaging configuration for the allure-emailer
+# project.  It uses the PEP 517/518 build specification with
+# setuptools as the build backend.  The project metadata includes
+# a description, required Python version and its runtime
+# dependencies.  When installing this package the entry point
+# declared under [project.scripts] exposes the `allure-emailer`
+# executable which runs the Typer-based CLI defined in
+# ``src/allure_emailer/cli.py``.
+
+[build-system]
+requires = [
+  "setuptools>=42",
+  "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "allure-emailer"
+version = "0.1.0"
+description = "CLI tool to send Allure test run summaries by email from CI pipelines"
+readme = "README.md"
+authors = [
+  { name = "Your Name", email = "you@example.com" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.7"
+dependencies = [
+  "typer>=0.9.0",
+  "python-dotenv>=1.0.0"
+]
+
+[[project.keywords]]
+keyword = "allure"
+[[project.keywords]]
+keyword = "email"
+[[project.keywords]]
+keyword = "ci"
+
+[project.scripts]
+allure-emailer = "allure_emailer.cli:app"
