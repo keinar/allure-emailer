@@ -1,5 +1,7 @@
 # allure‑emailer
 
+[![PyPI version](https://badge.fury.io/py/allure-emailer.svg)](https://badge.fury.io/py/allure-emailer)
+
 **allure‑emailer** is a small Python command‑line tool that makes it easy to send
 Allure test run summaries via email directly from your continuous
 integration (CI) pipelines.  It parses the Allure summary JSON produced
