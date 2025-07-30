@@ -1,7 +1,5 @@
 # allure‑emailer
 
-[![PyPI version](https://badge.fury.io/py/allure-emailer.svg)](https://badge.fury.io/py/allure-emailer)
-
 **allure‑emailer** is a small Python command‑line tool that makes it easy to send
 Allure test run summaries via email directly from your continuous
 integration (CI) pipelines.  It parses the Allure summary JSON produced
@@ -18,7 +16,10 @@ packaged for convenient installation via `pip`.
   generate a configuration file containing your SMTP credentials
   (including the **full email address** for the username), recipient
   addresses, the path to the Allure summary JSON and your Allure
-  report URL.  The tool never overwrites an existing `.env` file;
+  report URL.  The generated configuration file uses unique variable
+  names prefixed with ``AEMAILER_`` (for example ``AEMAILER_HOST`` and
+  ``AEMAILER_PORT``) to avoid collisions with system environment
+  variables.  The tool never overwrites an existing `.env` file;
   if one is present, the settings will instead be written to
   `.env.emailer`.  The "From" address is inferred from your SMTP
   username by default.  When you choose port `465` the tool will
@@ -28,12 +29,16 @@ packaged for convenient installation via `pip`.
   `.env.emailer` if present, otherwise from `.env`, parses the summary
   JSON and sends a concise HTML email showing the total number of tests,
   how many passed, failed, were broken or skipped, together with a link
-  to the full report.  You can override any configuration value via
+  to the full report.  Configuration values are read first from
+  variables prefixed with ``AEMAILER_`` (such as ``AEMAILER_HOST`` and
+  ``AEMAILER_PORT``) and fall back to legacy unprefixed variables if
+  necessary.  You can override any configuration value via
   command‑line options.  The subject line can be customised with
   `--subject` (which supports environment variable placeholders) and
   you can inject additional key–value pairs into the email body with
-  `--field KEY=VALUE` or by defining `FIELD_<KEY>=VALUE` entries in your
-  configuration file.
+  `--field KEY=VALUE` or by defining `AEMAILER_FIELD_<KEY>=VALUE` entries in your
+  configuration file.  (The legacy `FIELD_<KEY>` prefix is still
+  recognised for backward compatibility.)
 * 🧑‍🤝‍🧑 **Multiple recipients** – specify a comma‑separated list of
   recipient addresses either in your `.env` file or on the command
   line.
@@ -250,8 +255,6 @@ before running the email job (for example by committing it to your
 repository, storing it in a project variable, or injecting it via
 `before_script`).
 
-> Note: Never commit your SMTP password or secrets to source control. Always use CI secrets/environment variables for sensitive values.
-
 ## Custom subject and additional fields
 
 Sometimes you need to include extra context in your email notifications
@@ -279,9 +282,11 @@ If ``CI_PIPELINE_ID`` is defined in the environment or in
 Additional key–value pairs can be included in the body of the email.
 Specify them on the command line using the ``--field KEY=VALUE``
 option (you can use this option multiple times) or define them in
-your configuration file with variables prefixed by ``FIELD_``.  These
-fields will be displayed under an “Additional Information” section in
-the email.  For example:
+your configuration file with variables prefixed by ``AEMAILER_FIELD_``.
+The new prefix avoids collisions with other environment variables.  A
+legacy ``FIELD_`` prefix is also supported for backward compatibility.
+These fields will be displayed under an “Additional Information” section
+in the email.  For example:
 
 ```shell
 allure-emailer send \
@@ -292,8 +297,8 @@ allure-emailer send \
 or, in `.env.emailer`:
 
 ```
-FIELD_BUILD_NUMBER=42
-FIELD_COMMIT=abcdef123
+AEMAILER_FIELD_BUILD_NUMBER=42
+AEMAILER_FIELD_COMMIT=abcdef123
 ```
 
 Both methods are supported simultaneously; command‑line fields take

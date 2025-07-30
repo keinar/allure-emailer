@@ -34,18 +34,24 @@ def init(
         show_default=True,
     )
 ):
-    """Interactively generate a configuration file for allure-emailer.
+    """Interactively generate a configuration file for allure‑emailer.
 
-    This command prompts for SMTP host, port, username (which **must
-    be a full email address**, e.g. ``contact@example.com``) and
+    This command prompts for SMTP host, port, username (which **must**
+    be a full email address, e.g. ``contact@example.com``) and
     password, recipient addresses, the path to the Allure summary JSON
     and the URL to the full report.  It writes the collected values
     into a configuration file.  If a `.env` file already exists in
-    the specified directory it will not be overwritten—instead a
+    the specified directory it will **not** be overwritten—instead a
     `.env.emailer` file will be created.  Existing lines in `.env`
     remain untouched.  When specifying the SMTP port remember that
     port ``465`` uses implicit TLS (SSL) and port ``587`` uses
     STARTTLS.
+
+    The variables written to the configuration file are prefixed with
+    ``AEMAILER_`` (for example, ``AEMAILER_HOST``, ``AEMAILER_PORT``)
+    to avoid clashing with existing environment variables.  Custom
+    fields may also be added later by defining variables that start
+    with ``AEMAILER_FIELD_`` in your `.env` or `.env.emailer` file.
     """
     typer.echo("Initializing configuration for allure-emailer...")
     smtp_host = typer.prompt("SMTP host (e.g. smtp.example.com)")
@@ -144,7 +150,8 @@ def send(
         help=(
             "Custom key=value pairs to include in the email body.  May be"
             " specified multiple times.  Values defined in the configuration"
-            " file using the FIELD_ prefix will also be included."
+            " file using the AEMAILER_FIELD_ prefix (or the legacy FIELD_"
+            " prefix) will also be included."
         ),
     ),
 ):
@@ -162,7 +169,9 @@ def send(
     using SSL; all other ports (e.g. ``587``) use STARTTLS.  You can
     override the subject line with ``--subject`` and insert
     additional custom fields into the body using ``--field KEY=VALUE``
-    or by defining ``FIELD_<KEY>=VALUE`` entries in your configuration file.
+    or by defining ``AEMAILER_FIELD_<KEY>=VALUE`` entries in your
+    configuration file.  (Legacy ``FIELD_<KEY>`` entries are still
+    recognised for backward compatibility.)
     """
     # Determine which env file to load if not explicitly provided
     selected_env = env_file
@@ -195,9 +204,11 @@ def send(
     config = Config.from_env(selected_env, overrides=overrides)
     # Parse summary JSON (prefer CLI override if provided)
     summary_stats = parse_summary(json_path or config.json_path)
-    # Collect custom fields from the configuration file and CLI
+    # Collect custom fields from the configuration file and CLI.  We
+    # support both the new ``AEMAILER_FIELD_`` prefix and the legacy
+    # ``FIELD_`` prefix.  Values defined under the new prefix take
+    # precedence over legacy entries if the same key appears twice.
     custom_fields: Dict[str, str] = {}
-    # Load values from the env file (keys starting with FIELD_)
     if selected_env:
         # parse file vars using dotenv_values
         from dotenv import dotenv_values  # imported lazily to avoid overhead
@@ -206,11 +217,26 @@ def send(
             file_vars = dotenv_values(selected_env)  # type: ignore[assignment]
         except Exception:
             file_vars = {}
+        # Normalise keys for comparison
         for k, v in file_vars.items():
-            if isinstance(k, str) and k.upper().startswith("FIELD_"):
-                key_name = k[6:]
+            if not isinstance(k, str):
+                continue
+            key_upper = k.upper()
+            # New prefix: AEMAILER_FIELD_ followed by the field name
+            if key_upper.startswith("AEMAILER_FIELD_"):
+                key_name = k[len("AEMAILER_FIELD_"):]
                 custom_fields[key_name] = str(v) if v is not None else ""
-    # Parse CLI-provided fields
+        # Process legacy FIELD_ only if a corresponding AEMAILER_FIELD_ was
+        # not already set
+        for k, v in file_vars.items():
+            if not isinstance(k, str):
+                continue
+            key_upper = k.upper()
+            if key_upper.startswith("FIELD_"):
+                key_name = k[len("FIELD_"):]
+                if key_name not in custom_fields:
+                    custom_fields[key_name] = str(v) if v is not None else ""
+    # Parse CLI-provided fields.  CLI values override file values.
     if field:
         for item in field:
             if "=" not in item:

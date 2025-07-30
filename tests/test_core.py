@@ -44,18 +44,37 @@ def test_config_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     env_file = tmp_path / ".env"
     env_file.write_text(
         "\n".join([
-            "HOST=smtp.test.com",
-            "PORT=2525",
-            "USER=ci@example.com",
-            "PASSWORD=secret",
-            "SENDER=ci@test.com",
-            "RECIPIENTS=dev1@test.com,dev2@test.com",
-            "JSON_PATH=report/summary.json",
-            "REPORT_URL=https://example.com/report",
+            # use the AEMAILER_ prefix to avoid clobbering system variables
+            "AEMAILER_HOST=smtp.test.com",
+            "AEMAILER_PORT=2525",
+            "AEMAILER_USER=ci@example.com",
+            "AEMAILER_PASSWORD=secret",
+            "AEMAILER_SENDER=ci@test.com",
+            "AEMAILER_RECIPIENTS=dev1@test.com,dev2@test.com",
+            "AEMAILER_JSON_PATH=report/summary.json",
+            "AEMAILER_REPORT_URL=https://example.com/report",
         ])
     )
     # Ensure no conflicting variables are set in the current environment
-    for var in ["HOST", "PORT", "USER", "PASSWORD", "SENDER", "RECIPIENTS", "JSON_PATH", "REPORT_URL"]:
+    for var in [
+        "AEMAILER_HOST",
+        "AEMAILER_PORT",
+        "AEMAILER_USER",
+        "AEMAILER_PASSWORD",
+        "AEMAILER_SENDER",
+        "AEMAILER_RECIPIENTS",
+        "AEMAILER_JSON_PATH",
+        "AEMAILER_REPORT_URL",
+        # Remove legacy names if present
+        "HOST",
+        "PORT",
+        "USER",
+        "PASSWORD",
+        "SENDER",
+        "RECIPIENTS",
+        "JSON_PATH",
+        "REPORT_URL",
+    ]:
         monkeypatch.delenv(var, raising=False)
     cfg = Config.from_env(env_file)
     assert cfg.host == "smtp.test.com"
@@ -79,14 +98,32 @@ def test_effective_sender_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     env_file = tmp_path / ".env"
     env_file.write_text(
         "\n".join([
-            "HOST=smtp.test.com",
-            "PORT=2525",
-            "USER=ci@example.com",
-            "PASSWORD=secret",
-            "RECIPIENTS=dev@example.com",
+            "AEMAILER_HOST=smtp.test.com",
+            "AEMAILER_PORT=2525",
+            "AEMAILER_USER=ci@example.com",
+            "AEMAILER_PASSWORD=secret",
+            "AEMAILER_RECIPIENTS=dev@example.com",
         ])
     )
-    for var in ["HOST", "PORT", "USER", "PASSWORD", "RECIPIENTS", "SENDER", "JSON_PATH", "REPORT_URL"]:
+    for var in [
+        "AEMAILER_HOST",
+        "AEMAILER_PORT",
+        "AEMAILER_USER",
+        "AEMAILER_PASSWORD",
+        "AEMAILER_RECIPIENTS",
+        "AEMAILER_SENDER",
+        "AEMAILER_JSON_PATH",
+        "AEMAILER_REPORT_URL",
+        # legacy names
+        "HOST",
+        "PORT",
+        "USER",
+        "PASSWORD",
+        "RECIPIENTS",
+        "SENDER",
+        "JSON_PATH",
+        "REPORT_URL",
+    ]:
         monkeypatch.delenv(var, raising=False)
     cfg = Config.from_env(env_file)
     assert cfg.sender == ""

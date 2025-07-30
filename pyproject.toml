@@ -18,11 +18,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "allure-emailer"
-version = "0.1.0"
+version = "0.1.1"
 description = "CLI tool to send Allure test run summaries by email from CI pipelines"
 readme = "README.md"
 authors = [
-  { name = "Your Name", email = "you@example.com" }
+  { name = "Keinar", email = "keinarelkayam@gmail.com" }
 ]
 license = { text = "MIT" }
 requires-python = ">=3.7"
@@ -42,8 +42,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0"
-]

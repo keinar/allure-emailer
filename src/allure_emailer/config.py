@@ -76,21 +76,28 @@ class Config:
         # Load configuration from the .env file (if provided) and from
         # the process environment.  The values in the file take
         # precedence over the environment variables of the same name to
-        # avoid collisions with system variables like ``USER``.
+        # avoid collisions with system variables like ``USER``.  In
+        # addition, keys prefixed with ``AEMAILER_`` are preferred over
+        # their unprefixed counterparts to avoid clashing with other
+        # environment variables.  For example, ``AEMAILER_HOST`` will be
+        # used before ``HOST``.
         file_vars: Dict[str, Optional[str]] = {}
         if env_file is not None:
-            # dotenv_values reads key/value pairs from the file without
-            # altering os.environ
+            # ``dotenv_values`` reads key/value pairs from the file without
+            # altering ``os.environ``.  We normalise keys to uppercase
+            # later when merging.
             file_vars = dotenv_values(env_file)  # type: ignore[assignment]
 
-        # Start with a copy of the current environment; values from the
-        # file override these.
-        env_map: Dict[str, Optional[str]] = {k.lower(): v for k, v in os.environ.items()}
+        # Build a combined environment mapping where keys are
+        # uppercased.  Begin with the process environment and then
+        # overlay values from the file (file values override env vars).
+        combined: Dict[str, Optional[str]] = {k.upper(): v for k, v in os.environ.items()}
         for k, v in file_vars.items():
-            env_map[k.lower()] = v
+            # Normalise file keys to uppercase when merging
+            combined[k.upper()] = v
 
-        # Extract only the keys we care about
-        keys = [
+        # Define the configuration fields we expect
+        fields = [
             "host",
             "port",
             "user",
@@ -100,7 +107,19 @@ class Config:
             "json_path",
             "report_url",
         ]
-        env_map = {k: env_map.get(k) for k in keys}
+        # Extract values from the combined mapping, preferring
+        # ``AEMAILER_<KEY>`` over ``<KEY>``.  If neither is present the
+        # value remains ``None``.
+        env_map: Dict[str, Optional[str]] = {}
+        for field_name in fields:
+            prefixed = f"AEMAILER_{field_name.upper()}"
+            unprefixed = field_name.upper()
+            if prefixed in combined:
+                env_map[field_name] = combined[prefixed]
+            elif unprefixed in combined:
+                env_map[field_name] = combined[unprefixed]
+            else:
+                env_map[field_name] = None
 
         # Apply CLI overrides if provided (these take highest precedence)
         if overrides:
@@ -109,12 +128,14 @@ class Config:
                     env_map[key] = value
 
         # Validate required fields.  ``sender`` is optional and will
-        # default to the SMTP user if not provided.
+        # default to the SMTP user if not provided.  Note that we
+        # normalise the case of field names when generating the error
+        # message.
         required_keys = ["host", "port", "user", "password", "recipients"]
         missing = [k for k in required_keys if not env_map.get(k)]
         if missing:
             raise ValueError(
-                f"Missing required configuration: {', '.join(missing).upper()}"
+                f"Missing required configuration: {', '.join(name.upper() for name in missing)}"
             )
 
         # Convert and normalise values
@@ -124,7 +145,9 @@ class Config:
         except ValueError:
             raise ValueError(f"Invalid port value: {port_value}")
 
-        recipients_list = [addr.strip() for addr in env_map["recipients"].split(",") if addr.strip()]
+        recipients_raw = env_map["recipients"] or ""
+        recipients_list = [addr.strip() for addr in recipients_raw.split(",") if addr.strip()]
+
         # Ensure the SMTP username is a full email address (contains '@')
         user_val = env_map["user"]
         if "@" not in (user_val or ""):
@@ -162,8 +185,10 @@ def save_env_file(path: Path, config_dict: Dict[str, str]) -> None:
     """Write a set of configuration values to a .env file.
 
     The values in ``config_dict`` should be plain strings.  Keys are
-    uppercased when written so that they can be read back by
-    :func:`python-dotenv.load_dotenv` and :func:`Config.from_env`.
+    uppercased and prefixed with ``AEMAILER_`` when written so that
+    they can be read back by :func:`Config.from_env` without
+    colliding with unrelated environment variables.  For example,
+    the ``host`` field is written as ``AEMAILER_HOST``.
 
     Parameters
     ----------
@@ -173,8 +198,9 @@ def save_env_file(path: Path, config_dict: Dict[str, str]) -> None:
         Mapping of field names (lowercase) to string values to
         persist.
     """
-    lines = []
+    lines: List[str] = []
     for key, value in config_dict.items():
-        lines.append(f"{key.upper()}={value}\n")
+        env_key = f"AEMAILER_{key.upper()}"
+        lines.append(f"{env_key}={value}\n")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(lines))
