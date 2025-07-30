@@ -42,6 +42,26 @@ class Config:
     json_path: str = "allure-report/widgets/summary.json"
     report_url: str = ""
     sender: str = ""
+    # Optional OAuth2 access token for XOAUTH2 authentication.  When
+    # provided, this token will be used instead of the password to
+    # authenticate with the SMTP server via the XOAUTH2 mechanism.
+    # The value should be a raw access token (not base64‑encoded).  If
+    # ``oauth_token`` is ``None`` or empty, password‑based
+    # authentication is used.
+    oauth_token: Optional[str] = None
+
+    # Optional Microsoft Graph API credentials.  When all four of
+    # ``tenant_id``, ``client_id``, ``client_secret`` and
+    # ``from_address`` are provided, the email will be sent via the
+    # Microsoft Graph API instead of SMTP.  These correspond to
+    # environment variables ``AEMAILER_TENANT_ID``, ``AEMAILER_CLIENT_ID``,
+    # ``AEMAILER_CLIENT_SECRET`` and ``AEMAILER_FROM_ADDRESS`` (or the
+    # legacy names without the prefix).  They are not required for
+    # normal SMTP operation.
+    tenant_id: Optional[str] = None
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+    from_address: Optional[str] = None
 
     @classmethod
     def from_env(
@@ -106,6 +126,11 @@ class Config:
             "recipients",
             "json_path",
             "report_url",
+            "oauth_token",
+            "tenant_id",
+            "client_id",
+            "client_secret",
+            "from_address",
         ]
         # Extract values from the combined mapping, preferring
         # ``AEMAILER_<KEY>`` over ``<KEY>``.  If neither is present the
@@ -127,12 +152,38 @@ class Config:
                 if value is not None:
                     env_map[key] = value
 
-        # Validate required fields.  ``sender`` is optional and will
-        # default to the SMTP user if not provided.  Note that we
-        # normalise the case of field names when generating the error
-        # message.
-        required_keys = ["host", "port", "user", "password", "recipients"]
-        missing = [k for k in required_keys if not env_map.get(k)]
+        # Determine which authentication mechanism is configured.  If
+        # ``tenant_id``, ``client_id`` and ``client_secret`` are all
+        # present, assume the Microsoft Graph API will be used and
+        # relax SMTP requirements.  Otherwise assume SMTP (password or
+        # XOAUTH2) and require the usual fields.
+        missing: List[str] = []
+        using_graph = bool(
+            env_map.get("tenant_id") and env_map.get("client_id") and env_map.get("client_secret")
+        )
+        if using_graph:
+            # Graph API mode: require tenant_id, client_id, client_secret and
+            # recipients.  Also require at least one of from_address or user
+            for field_name in ["tenant_id", "client_id", "client_secret", "recipients"]:
+                if not env_map.get(field_name):
+                    missing.append(field_name)
+            if not (env_map.get("from_address") or env_map.get("user")):
+                missing.append("from_address/user")
+            # Provide defaults for host/port/user if not supplied; they will
+            # not be used but need to be set for type conversion below.
+            env_map["host"] = env_map.get("host") or ""
+            env_map["port"] = env_map.get("port") or "0"
+            # In Graph mode ignore system USER; prefer from_address or existing
+            env_map["user"] = env_map.get("from_address") or env_map.get("user") or ""
+            env_map["password"] = env_map.get("password") or None
+        else:
+            # SMTP mode: require host, port, user, recipients
+            for field_name in ["host", "port", "user", "recipients"]:
+                if not env_map.get(field_name):
+                    missing.append(field_name)
+            # Require password when no OAuth token is provided
+            if not env_map.get("oauth_token") and not env_map.get("password"):
+                missing.append("password")
         if missing:
             raise ValueError(
                 f"Missing required configuration: {', '.join(name.upper() for name in missing)}"
@@ -150,7 +201,11 @@ class Config:
 
         # Ensure the SMTP username is a full email address (contains '@')
         user_val = env_map["user"]
-        if "@" not in (user_val or ""):
+        # Only enforce email format for SMTP modes
+        using_graph_final = bool(
+            env_map.get("tenant_id") and env_map.get("client_id") and env_map.get("client_secret")
+        )
+        if not using_graph_final and "@" not in (user_val or ""):
             raise ValueError(
                 "SMTP USER must be a full email address (e.g. contact@example.com)"
             )
@@ -164,6 +219,11 @@ class Config:
             json_path=env_map.get("json_path") or "allure-report/widgets/summary.json",
             report_url=env_map.get("report_url") or "",
             sender=env_map.get("sender") or "",
+            oauth_token=env_map.get("oauth_token") or None,
+            tenant_id=env_map.get("tenant_id") or None,
+            client_id=env_map.get("client_id") or None,
+            client_secret=env_map.get("client_secret") or None,
+            from_address=env_map.get("from_address") or None,
         )
 
     def effective_sender(self) -> str:

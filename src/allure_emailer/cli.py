@@ -36,30 +36,99 @@ def init(
 ):
     """Interactively generate a configuration file for allure‑emailer.
 
-    This command prompts for SMTP host, port, username (which **must**
-    be a full email address, e.g. ``contact@example.com``) and
-    password, recipient addresses, the path to the Allure summary JSON
-    and the URL to the full report.  It writes the collected values
-    into a configuration file.  If a `.env` file already exists in
-    the specified directory it will **not** be overwritten—instead a
-    `.env.emailer` file will be created.  Existing lines in `.env`
-    remain untouched.  When specifying the SMTP port remember that
-    port ``465`` uses implicit TLS (SSL) and port ``587`` uses
-    STARTTLS.
+    This command prompts you for the information needed to send
+    Allure summaries by email.  It supports three authentication
+    methods:
 
-    The variables written to the configuration file are prefixed with
-    ``AEMAILER_`` (for example, ``AEMAILER_HOST``, ``AEMAILER_PORT``)
-    to avoid clashing with existing environment variables.  Custom
-    fields may also be added later by defining variables that start
-    with ``AEMAILER_FIELD_`` in your `.env` or `.env.emailer` file.
+    * **smtp** – traditional SMTP using a username (full email
+      address) and password.
+    * **smtp-oauth2** – SMTP using XOAUTH2 with a bearer access
+      token instead of a password.
+    * **graph** – Microsoft Graph API using client credentials
+      (tenant ID, client ID, client secret) and a sender address.
+
+    Based on your choice, the command will ask the appropriate
+    questions and write the collected values into a configuration
+    file.  If a `.env` file already exists in the specified
+    directory it will **not** be overwritten—instead a
+    `.env.emailer` file will be created.  Existing lines in `.env`
+    remain untouched.  The variables written to the configuration
+    file are prefixed with ``AEMAILER_`` (for example,
+    ``AEMAILER_HOST`` or ``AEMAILER_TENANT_ID``) to avoid clashing
+    with existing environment variables.  When specifying an SMTP
+    port, keep in mind that port ``465`` uses implicit TLS (SSL) and
+    port ``587`` uses STARTTLS.  Custom fields may be added later by
+    defining variables that start with ``AEMAILER_FIELD_`` in your
+    `.env` or `.env.emailer` file.
     """
     typer.echo("Initializing configuration for allure-emailer...")
-    smtp_host = typer.prompt("SMTP host (e.g. smtp.example.com)")
-    smtp_port = typer.prompt("SMTP port", type=int, default=587)
-    smtp_user = typer.prompt("SMTP username (full email address)")
-    smtp_password = typer.prompt(
-        "SMTP password", hide_input=True, confirmation_prompt=False
+    # Ask the user which authentication method to configure.  Valid
+    # options are smtp, smtp-oauth2 and graph.  Default to smtp.
+    # Use Click's Choice type so that the user sees the valid options and
+    # cannot enter an unexpected value.  Choices are case-insensitive.
+    import click  # type: ignore
+    method_choice = typer.prompt(
+        "Select authentication method",
+        type=click.Choice(["smtp", "smtp-oauth2", "graph"], case_sensitive=False),
+        default="smtp",
+        show_default=True,
     )
+    method = method_choice.lower()
+
+    config_values: Dict[str, str] = {}
+    if method == "smtp":
+        smtp_host = typer.prompt("SMTP host (e.g. smtp.example.com)")
+        smtp_port = typer.prompt("SMTP port", type=int, default=587)
+        smtp_user = typer.prompt("SMTP username (full email address)")
+        smtp_password = typer.prompt(
+            "SMTP password", hide_input=True, confirmation_prompt=False
+        )
+        config_values.update(
+            {
+                "host": smtp_host,
+                "port": str(smtp_port),
+                "user": smtp_user,
+                "password": smtp_password,
+            }
+        )
+    elif method == "smtp-oauth2":
+        smtp_host = typer.prompt("SMTP host (e.g. smtp.example.com)")
+        smtp_port = typer.prompt("SMTP port", type=int, default=587)
+        smtp_user = typer.prompt("SMTP username (full email address)")
+        oauth_token = typer.prompt(
+            "OAuth2 access token", hide_input=True, confirmation_prompt=False
+        )
+        config_values.update(
+            {
+                "host": smtp_host,
+                "port": str(smtp_port),
+                "user": smtp_user,
+                "oauth_token": oauth_token,
+            }
+        )
+    else:  # graph
+        tenant_id = typer.prompt("Azure tenant ID")
+        client_id = typer.prompt("Azure client ID")
+        client_secret = typer.prompt(
+            "Azure client secret", hide_input=True, confirmation_prompt=False
+        )
+        # The from address is the email address used to send via Graph.  It
+        # often corresponds to the service account.  Ask for it but allow
+        # empty to fall back to the user address.
+        from_address = typer.prompt(
+            "Sender email address (From)", default="", show_default=False
+        )
+        config_values.update(
+            {
+                "tenant_id": tenant_id,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }
+        )
+        if from_address:
+            config_values["from_address"] = from_address
+
+    # Prompt for settings common to all methods
     recipients = typer.prompt(
         "Recipient email address(es) (comma separated)",
         prompt_suffix=" : ",
@@ -74,16 +143,13 @@ def init(
         default="",
         show_default=False,
     )
-
-    config_values = {
-        "host": smtp_host,
-        "port": str(smtp_port),
-        "user": smtp_user,
-        "password": smtp_password,
-        "recipients": recipients,
-        "json_path": json_path,
-        "report_url": report_url,
-    }
+    config_values.update(
+        {
+            "recipients": recipients,
+            "json_path": json_path,
+            "report_url": report_url,
+        }
+    )
 
     env_dir = Path(directory).expanduser().resolve()
     env_path = env_dir / ".env"
@@ -135,6 +201,15 @@ def send(
     report_url: Optional[str] = typer.Option(
         None, help="Override public URL to the full Allure report"
     ),
+    oauth_token: Optional[str] = typer.Option(
+        None,
+        help=(
+            "Override OAuth2 access token for XOAUTH2 authentication.  "
+            "When provided, the token will be used instead of the SMTP password to "
+            "authenticate with the server.  You must also set the SMTP username "
+            "to the full email address."
+        ),
+    ),
     subject: str = typer.Option(
         "Allure Test Summary",
         help=(
@@ -154,6 +229,29 @@ def send(
             " prefix) will also be included."
         ),
     ),
+    tenant_id: Optional[str] = typer.Option(
+        None,
+        help=(
+            "Override Microsoft tenant ID for Graph API authentication.  "
+            "When provided together with client ID and client secret, the email will "
+            "be sent via the Microsoft Graph API instead of SMTP."
+        ),
+    ),
+    client_id: Optional[str] = typer.Option(
+        None,
+        help="Override Microsoft client ID for Graph API authentication",
+    ),
+    client_secret: Optional[str] = typer.Option(
+        None,
+        help="Override Microsoft client secret for Graph API authentication",
+    ),
+    from_address: Optional[str] = typer.Option(
+        None,
+        help=(
+            "Override the sender email address when using the Microsoft Graph API. "
+            "Defaults to the SMTP username if omitted."
+        ),
+    ),
 ):
     """Send an email summarising an Allure test run.
 
@@ -171,7 +269,18 @@ def send(
     additional custom fields into the body using ``--field KEY=VALUE``
     or by defining ``AEMAILER_FIELD_<KEY>=VALUE`` entries in your
     configuration file.  (Legacy ``FIELD_<KEY>`` entries are still
-    recognised for backward compatibility.)
+    recognised for backward compatibility.)  If you wish to use
+    OAuth 2.0 for authentication (for example, with Gmail or Office 365),
+    you can supply an access token via the ``AEMAILER_OAUTH_TOKEN``
+    variable in your configuration file or via the ``--oauth-token``
+    option when sending.  When an OAuth token is provided the password
+    is not used.
+    
+    You can also send email via the Microsoft Graph API by providing a
+    tenant ID, client ID and client secret.  When these values (and
+    optionally ``from_address``) are available in the configuration or
+    provided via command‑line options, the tool will authenticate
+    against Microsoft and send the message using Graph instead of SMTP.
     """
     # Determine which env file to load if not explicitly provided
     selected_env = env_file
@@ -199,6 +308,13 @@ def send(
         "recipients": recipients,
         "json_path": json_path,
         "report_url": report_url,
+        # Support overriding the OAuth token on the CLI
+        "oauth_token": oauth_token,
+        # Graph API overrides
+        "tenant_id": tenant_id,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "from_address": from_address,
     }
     # Load configuration, merging overrides
     config = Config.from_env(selected_env, overrides=overrides)

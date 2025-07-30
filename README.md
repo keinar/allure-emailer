@@ -13,17 +13,20 @@ packaged for convenient installation via `pip`.
 * 📦 **Easy installation** – distributed on PyPI so you can install it
   with `pip install allure‑emailer`.
 * 🧭 **Interactive configuration** – run `allure‑emailer init` once to
-  generate a configuration file containing your SMTP credentials
-  (including the **full email address** for the username), recipient
-  addresses, the path to the Allure summary JSON and your Allure
-  report URL.  The generated configuration file uses unique variable
-  names prefixed with ``AEMAILER_`` (for example ``AEMAILER_HOST`` and
-  ``AEMAILER_PORT``) to avoid collisions with system environment
-  variables.  The tool never overwrites an existing `.env` file;
-  if one is present, the settings will instead be written to
-  `.env.emailer`.  The "From" address is inferred from your SMTP
-  username by default.  When you choose port `465` the tool will
-  connect via SSL; for port `587` it will use STARTTLS.
+  walk you through choosing an authentication method—SMTP with a
+  password, SMTP with an OAuth2 token or Microsoft Graph—and then
+  collect the appropriate settings (SMTP host/port/user/password or
+  OAuth2 token, or tenant/client credentials for Graph).  It will also
+  ask for the recipient addresses, the path to the Allure summary JSON
+  and your Allure report URL.  The generated configuration file uses
+  unique variable names prefixed with ``AEMAILER_`` (for example
+  ``AEMAILER_HOST`` and ``AEMAILER_TENANT_ID``) to avoid collisions
+  with system environment variables.  The tool never overwrites an
+  existing `.env` file; if one is present, the settings will instead
+  be written to `.env.emailer`.  The "From" address is inferred from
+  your SMTP username by default when using SMTP.  When you choose
+  port `465` the tool will connect via SSL; for port `587` it will use
+  STARTTLS.
 * ✉️ **Send test summaries** – run `allure‑emailer send` in a CI step
   after generating the Allure report.  It reads the configuration from
   `.env.emailer` if present, otherwise from `.env`, parses the summary
@@ -39,6 +42,22 @@ packaged for convenient installation via `pip`.
   `--field KEY=VALUE` or by defining `AEMAILER_FIELD_<KEY>=VALUE` entries in your
   configuration file.  (The legacy `FIELD_<KEY>` prefix is still
   recognised for backward compatibility.)
+* 🔐 **OAuth 2.0 support** – if your email provider requires OAuth2
+  authentication you have two options:
+  
+  * **SMTP XOAUTH2** – provide a bearer access token via the
+    `AEMAILER_OAUTH_TOKEN` variable in your configuration file or the
+    `--oauth-token` option when sending.  When an OAuth token is
+    supplied the regular SMTP password is ignored and XOAUTH2 is used
+    to authenticate over SMTP (useful for Gmail, etc.).
+  * **Microsoft Graph API** – instead of SMTP you can send via the
+    Microsoft Graph API by defining `AEMAILER_TENANT_ID`,
+    `AEMAILER_CLIENT_ID` and `AEMAILER_CLIENT_SECRET` (and optionally
+    `AEMAILER_FROM_ADDRESS`) in your configuration.  When these
+    variables are present the tool obtains an access token from
+    Azure Active Directory and invokes the Graph API to send your
+    message.  You can also override these values at run time with
+    `--tenant-id`, `--client-id`, `--client-secret` and `--from-address`.
 * 🧑‍🤝‍🧑 **Multiple recipients** – specify a comma‑separated list of
   recipient addresses either in your `.env` file or on the command
   line.
@@ -303,6 +322,45 @@ AEMAILER_FIELD_COMMIT=abcdef123
 
 Both methods are supported simultaneously; command‑line fields take
 precedence over those defined in the file if there are conflicts.
+
+### OAuth 2.0 authentication
+
+Some email providers (notably Gmail and Microsoft 365) no longer
+accept basic username/password authentication and instead require
+OAuth 2.0 (XOAUTH2).  **allure‑emailer** supports this by allowing you to
+provide OAuth2 credentials in two different ways.
+
+1. **SMTP XOAUTH2** – if you have generated an access token for your
+   SMTP account, set it in your configuration file using the
+   variable `AEMAILER_OAUTH_TOKEN` (prefixed to avoid collisions).
+   When this variable is present the configured SMTP password will be
+   ignored and the token will be used for XOAUTH2 authentication.  You
+   can also pass a token directly on the command line using the
+   `--oauth-token` flag:
+
+```shell
+```shell
+allure-emailer send \
+  --oauth-token "$SMTP_ACCESS_TOKEN"
+```
+
+2. **Microsoft Graph API** – if you wish to send mail via the
+   Microsoft Graph API instead of SMTP, define the variables
+   `AEMAILER_TENANT_ID`, `AEMAILER_CLIENT_ID` and
+   `AEMAILER_CLIENT_SECRET` (and optionally `AEMAILER_FROM_ADDRESS`) in
+   your configuration.  When these values are present the tool will
+   obtain an access token from Azure Active Directory and invoke the
+   Graph API endpoint `https://graph.microsoft.com/v1.0/users/{FROM}/sendMail`
+   to deliver your message.  You can override these values on the
+   command line with `--tenant-id`, `--client-id`, `--client-secret` and
+   `--from-address`.
+
+Obtaining OAuth2 tokens usually requires registering an application
+with your email provider and exchanging a refresh token for an access
+token via their API.  This tool does **not** perform that exchange for
+you; it expects a valid bearer token (for SMTP) or valid client
+credentials (for Graph).  Refer to your provider’s documentation on
+how to create and refresh tokens.
 
 ## Development and testing
 

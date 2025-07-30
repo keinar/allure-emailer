@@ -65,6 +65,7 @@ def test_config_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
         "AEMAILER_RECIPIENTS",
         "AEMAILER_JSON_PATH",
         "AEMAILER_REPORT_URL",
+        "AEMAILER_OAUTH_TOKEN",
         # Remove legacy names if present
         "HOST",
         "PORT",
@@ -74,6 +75,7 @@ def test_config_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
         "RECIPIENTS",
         "JSON_PATH",
         "REPORT_URL",
+        "OAUTH_TOKEN",
     ]:
         monkeypatch.delenv(var, raising=False)
     cfg = Config.from_env(env_file)
@@ -114,6 +116,7 @@ def test_effective_sender_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         "AEMAILER_SENDER",
         "AEMAILER_JSON_PATH",
         "AEMAILER_REPORT_URL",
+        "AEMAILER_OAUTH_TOKEN",
         # legacy names
         "HOST",
         "PORT",
@@ -123,6 +126,7 @@ def test_effective_sender_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         "SENDER",
         "JSON_PATH",
         "REPORT_URL",
+        "OAUTH_TOKEN",
     ]:
         monkeypatch.delenv(var, raising=False)
     cfg = Config.from_env(env_file)

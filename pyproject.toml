@@ -18,7 +18,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "allure-emailer"
-version = "0.1.1"
+version = "0.1.2"
 description = "CLI tool to send Allure test run summaries by email from CI pipelines"
 readme = "README.md"
 authors = [
@@ -29,6 +29,7 @@ requires-python = ">=3.7"
 dependencies = [
   "typer>=0.9.0",
   "python-dotenv>=1.0.0"
+  , "requests>=2.25.0"
 ]
 
 keywords = ["allure", "email", "ci"]
